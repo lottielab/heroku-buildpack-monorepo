@@ -12,22 +12,44 @@ CACHE_DIR="$2"
 ENV_DIR="$3"
 STAGE="$(mktemp -d)"
 
-if [ ! -f "${ENV_DIR}/APP_BASE" ]; then
-    echo "APP_BASE was not set. Aborting" | indent
-    exit 1
+# Logic from: https://github.com/lstoll/heroku-buildpack-monorepo
+if [ -f "${ENV_DIR}/APP_BASE" ]; then
+    APP_BASE="$(cat "${ENV_DIR}/APP_BASE")"
+
+    (
+        mv "${BUILD_DIR}/${APP_BASE}" "${STAGE}" &&
+        rm -rf "${BUILD_DIR}"/* &&
+        mv "${STAGE}/$(basename "$APP_BASE")"/* "${BUILD_DIR}"
+    )
+
+    if [ $? -ne 0 ]; then
+        echo "FAILED to copy directory into place" | indent
+        exit 1
+    fi
+
+    echo "Copied ${APP_BASE} to root of app successfully" | indent
+    exit 0 
 fi
-APP_BASE="$(cat "${ENV_DIR}/APP_BASE")"
 
-(
-    mv "${BUILD_DIR}/${APP_BASE}" "${STAGE}" &&
-    rm -rf "${BUILD_DIR}"/* &&
-    mv "${STAGE}/$(basename "$APP_BASE")"/* "${BUILD_DIR}"
-)
 
-if [ $? -ne 0 ]; then
-    echo "FAILED to copy directory into place" | indent
-    exit 1
+# Logic from: https://github.com/heroku/heroku-buildpack-multi-procfile
+PROCFILE=$(cat "${ENV_DIR}/PROCFILE")
+
+if ! [[ -z "${PROCFILE}" ]]; then
+    cp "${BUILD_DIR}/${PROCFILE}" "${BUILD_DIR}/Procfile"
+
+    if ! [ $? ]; then
+        echo "FAILED to copy a Procfile" | indent
+        exit 1
+    fi
+
+    echo "Copied ${PROCFILE} as Procfile successfully" | indent
+
+    APP_DIR=$(dirname "${BUILD_DIR}/${PROCFILE}")
+
+    if [[ -f "${APP_DIR}/app.json" ]]; then
+        cp "${APP_DIR}/app.json" "${BUILD_DIR}/app.json"
+        echo "Copied ${APP_DIR}/app.json as app.json successfully" | indent
+    fi
 fi
-
-echo "Copied ${APP_BASE} to root of app successfully" | indent
 
