@@ -12,23 +12,47 @@ CACHE_DIR="$2"
 ENV_DIR="$3"
 STAGE="$(mktemp -d)"
 
+echo "Initializing monorepo build environment" | indent
+
 # Logic from: https://github.com/lstoll/heroku-buildpack-monorepo
 if [ -f "${ENV_DIR}/APP_BASE" ]; then
     APP_BASE="$(cat "${ENV_DIR}/APP_BASE")"
 
-    (
-        mv "${BUILD_DIR}/${APP_BASE}" "${STAGE}" &&
-        rm -rf "${BUILD_DIR}"/* &&
-        mv "${STAGE}/$(basename "$APP_BASE")"/* "${BUILD_DIR}"
-    )
+    echo "APP_BASE set to ${APP_BASE}" | indent
 
-    if [ $? -ne 0 ]; then
-        echo "FAILED to copy directory into place" | indent
-        exit 1
+    # Check whether APP_BASE/.heroku/build.sh exists
+    if [ -f "${BUILD_DIR}/${APP_BASE}/.heroku/build.sh" ]; then
+        echo "Running ${APP_BASE}/.heroku/build.sh" | indent
+        (
+            cd "${BUILD_DIR}"
+            bash "${APP_BASE}/.heroku/build.sh"
+        )
+
+        if [ $? -ne 0 ]; then
+            echo "FAILED to run ${APP_BASE}/.heroku/build.sh" | indent
+            exit 1
+        fi
+    # Otherwise copy the directory into place
+    else
+        echo "No ${APP_BASE}/.heroku/build.sh found, copying directory into place" | indent
+
+        (
+            mv "${BUILD_DIR}/${APP_BASE}" "${STAGE}" &&
+            rm -rf "${BUILD_DIR}"/* &&
+            mv "${STAGE}/$(basename "$APP_BASE")"/* "${BUILD_DIR}"
+        )
+
+        if [ $? -ne 0 ]; then
+            echo "FAILED to copy directory into place" | indent
+            exit 1
+        fi
+
+        echo "Copied ${APP_BASE} to root of app successfully" | indent
+        exit 0
     fi
-
-    echo "Copied ${APP_BASE} to root of app successfully" | indent
-    exit 0 
+else
+    echo "No APP_BASE found, leaving source files untouched" | indent
+    exit 0
 fi
 
 
